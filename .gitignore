@@ -2,5 +2,4 @@ __pycache__/
 .airflow/
 logs/
 jars/postgresql-*.jar
-reports/*.png
 .env

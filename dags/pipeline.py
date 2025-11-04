@@ -10,7 +10,7 @@ from airflow.operators.python import PythonOperator
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.utils.task_group import TaskGroup
 
-# ---- Constants (paths via volume mounts) ----
+BASE_DIR = Path("/opt/airflow")
 BASE_DIR = Path("/opt/airflow")
 RAW_DIR = BASE_DIR / "include" / "data" / "raw"
 STAGE_DIR = BASE_DIR / "include" / "data" / "stage"
@@ -26,10 +26,6 @@ def _ensure_dirs():
 
 
 def _ingest_file(src_name: str, dest_key: str, **context):
-    """
-    Copy from include/data/raw/ to include/data/stage/ with a per-run tag.
-    Only file paths are shared via XCom.
-    """
     run_tag = context["ts_nodash"]  # unique per run, e.g. 20251104T073717
     src = RAW_DIR / src_name
     dest = STAGE_DIR / f"{Path(src_name).stem}_{run_tag}.csv"
@@ -45,7 +41,6 @@ def _ingest_file(src_name: str, dest_key: str, **context):
 def _transform_customers(**context):
     path = context["ti"].xcom_pull(key="customers_path")
     df = pd.read_csv(path)
-    # minimal, illustrative transforms
     df["customer_name"] = df["customer_name"].str.title()
     df["signup_date"] = pd.to_datetime(df["signup_date"]).dt.date
     out = Path(path).with_name(Path(path).stem + "_clean.csv")
@@ -71,31 +66,20 @@ def _merge_and_load(**context):
     ti = context["ti"]
     cust_p = ti.xcom_pull(key="customers_clean")
     ord_p = ti.xcom_pull(key="orders_clean")
-
-    # Ensure upstream files exist for THIS run (clear+rerun transform if missing)
     for label, p in [("customers_clean", cust_p), ("orders_clean", ord_p)]:
         if not p or not Path(p).exists():
             raise FileNotFoundError(
                 f"Upstream file for {label} is missing: {p}. "
                 "Clear the transform TaskGroup (with downstream) or trigger a fresh DAG run."
             )
-
     customers = pd.read_csv(cust_p)
     orders = pd.read_csv(ord_p)
-
-    # Ensure dtypes
     customers["signup_date"] = pd.to_datetime(customers["signup_date"]).dt.date
     orders["order_date"] = pd.to_datetime(orders["order_date"]).dt.date
     orders["order_amount"] = pd.to_numeric(orders["order_amount"])
-
-    # Merge
     merged = orders.merge(customers, on="customer_id", how="left")
-
-    # Get SQLAlchemy engine from Airflow connection
     hook = PostgresHook(postgres_conn_id="warehouse_postgres")
     engine = hook.get_sqlalchemy_engine()
-
-    # Create table if missing
     create_sql = """
     CREATE TABLE IF NOT EXISTS public.customer_orders (
         customer_id INT,
@@ -111,16 +95,11 @@ def _merge_and_load(**context):
     """
     with engine.begin() as conn:
         conn.execute(text(create_sql))
-
-    # Use Postgres COPY via psycopg2 for a robust, fast load (avoids pandas/to_sql compatibility issues)
     from io import StringIO
 
-    # Get a DBAPI (psycopg2) connection from the Airflow hook
     pg_conn = hook.get_conn()
     cur = pg_conn.cursor()
-
     buf = StringIO()
-    # Reorder columns to match the COPY column list exactly (avoid column-shift errors)
     copy_cols = [
         "customer_id",
         "customer_name",
@@ -132,18 +111,13 @@ def _merge_and_load(**context):
         "unit_price",
         "order_amount",
     ]
-    # Ensure all expected columns exist; if not, this will raise a KeyError early
     merged = merged.loc[:, copy_cols]
-
-    # Write the DataFrame to the buffer in CSV format with header
     merged.to_csv(buf, index=False, header=True)
     buf.seek(0)
-
     copy_sql = (
         "COPY public.customer_orders (customer_id, customer_name, signup_date, order_id, order_date, item, quantity, unit_price, order_amount)"
         " FROM STDIN WITH CSV HEADER"
     )
-
     try:
         cur.copy_expert(copy_sql, buf)
         pg_conn.commit()
@@ -159,9 +133,6 @@ def _merge_and_load(**context):
 
 
 def _spark_analysis(**context):
-    """
-    Use PySpark (bonus): read merged table via JDBC, compute top-10 customers by spend, write PNG.
-    """
     from pyspark.sql import SparkSession
     from pyspark.sql.functions import sum as _sum, col
     import matplotlib.pyplot as plt
@@ -259,10 +230,8 @@ def _spark_analysis(**context):
 
 
 def _cleanup(**context):
-    # Remove only files created for THIS run (avoid nuking other runs)
     run_tag = context["ti"].xcom_pull(key="run_tag")
     if not run_tag:
-        # Fallback: don't delete anything if we don't know the tag
         return
     for p in STAGE_DIR.glob(f"*{run_tag}*.csv"):
         try:
@@ -343,8 +312,6 @@ with DAG(
         end,
     )
 
-# Define the Postgres connection dynamically at import time if not set in Airflow UI.
-# This is a convenience for the assignment so you don't have to click the UI.
 from airflow.models import Connection
 from airflow.settings import Session
 
