@@ -1,0 +1,7 @@
+order_id,customer_id,order_date,item,quantity,unit_price
+101,1,2024-06-01,Notebook,2,4.50
+102,1,2024-06-15,Pencil,10,0.50
+103,2,2024-06-21,Headphones,1,59.99
+104,3,2024-07-02,USB-C Cable,3,9.99
+105,3,2024-07-18,Mouse,1,24.99
+106,4,2024-08-01,Webcam,1,79.99

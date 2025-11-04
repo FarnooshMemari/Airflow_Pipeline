@@ -1,0 +1,17 @@
+{
+  "name": "airflow-pipeline",
+  "build": { "dockerfile": "../Dockerfile" },
+  "workspaceFolder": "/workspace",
+  "mounts": ["source=${localWorkspaceFolder},target=/workspace,type=bind"],
+  "postCreateCommand": "pip --version && python --version",
+  "remoteUser": "airflow",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-azuretools.vscode-docker",
+        "ms-toolsai.jupyter"
+      ]
+    }
+  }
+}
