@@ -4,6 +4,15 @@ This project implements an end-to-end **Airflow pipeline** that ingests, process
 
 ---
 
+### ✅ Screenshots:
+#### Successful DAG execution in the Airflow UI
+<img width="1888" height="1753" alt="image_2025-11-04_03-36-05" src="https://github.com/user-attachments/assets/e234597a-4a1e-4063-b374-9d14e4c3f7b1" />
+
+#### The DAG graph view
+<img width="3773" height="1533" alt="image_2025-11-04_03-37-28" src="https://github.com/user-attachments/assets/4740af02-7e2d-47a2-a8b9-ead672c54d23" />
+
+---
+
 ### ✅ What the Pipeline Does
 
 - **Scheduled DAG (@daily)** orchestrated using Airflow.
